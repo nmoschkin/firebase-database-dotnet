@@ -20,14 +20,18 @@ namespace Firebase.Database.Streaming
         private readonly bool isDictionaryType;
         private readonly JsonSerializerSettings serializerSettings = new JsonSerializerSettings()
         {
-            ObjectCreationHandling = ObjectCreationHandling.Replace
+            ObjectCreationHandling = ObjectCreationHandling.Replace  /*, 
+            NullValueHandling = NullValueHandling.Ignore,
+            ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor */
         };
+
+        private readonly JsonSerializerSettings userSettings;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FirebaseCache{T}"/> class.
         /// </summary>
-        public FirebaseCache() 
-            : this(new Dictionary<string, T>())
+        public FirebaseCache(JsonSerializerSettings userSettings = null) 
+            : this(new Dictionary<string, T>(), userSettings)
         {
         }
 
@@ -35,8 +39,10 @@ namespace Firebase.Database.Streaming
         /// Initializes a new instance of the <see cref="FirebaseCache{T}"/> class and populates it with existing data.
         /// </summary>
         /// <param name="existingItems"> The existing items. </param>
-        public FirebaseCache(IDictionary<string, T> existingItems)
+        /// <param name="userSettings">User deserializer settings.</param>
+        public FirebaseCache(IDictionary<string, T> existingItems, JsonSerializerSettings userSettings = null)
         {
+            this.userSettings = userSettings;
             this.dictionary = existingItems;
             this.isDictionaryType = typeof(IDictionary).GetTypeInfo().IsAssignableFrom(typeof(T).GetTypeInfo());
         }
@@ -116,16 +122,19 @@ namespace Firebase.Database.Streaming
                 // insert data into dictionary and return it as a collection of FirebaseObject
                 var dictionary = obj as IDictionary;
                 var valueType = obj.GetType().GenericTypeArguments[1];
-                var objectCollection = data.GetObjectCollection(valueType);
+                var objectCollection = data.GetObjectCollection(valueType, this.userSettings ?? this.serializerSettings);
 
-                foreach (var item in objectCollection)
+                if (objectCollection.Count() > 0)
                 {
-                    dictionary[item.Key] = item.Object;
-
-                    // top level dictionary changed
-                    if (!pathElements.Any())
+                    foreach (var item in objectCollection)
                     {
-                        yield return new FirebaseObject<T>(item.Key, (T)item.Object);
+                        dictionary[item.Key] = item.Object;
+
+                        // top level dictionary changed
+                        if (!pathElements.Any())
+                        {
+                            yield return new FirebaseObject<T>(item.Key, (T)item.Object);
+                        }
                     }
                 }
 
@@ -144,7 +153,7 @@ namespace Firebase.Database.Streaming
                 var valueType = obj.GetType();
 
                 // firebase sends strings without double quotes
-                var targetObject = valueType == typeof(string) ? data.ToString() : JsonConvert.DeserializeObject(data, valueType);
+                var targetObject = valueType == typeof(string) ? data.ToString() : JsonConvert.DeserializeObject(data, valueType, this.userSettings ?? this.serializerSettings);
 
                 if ((valueType.GetTypeInfo().IsPrimitive || valueType == typeof(string) || typeof(IEnumerable).IsAssignableFrom(valueType)) && primitiveObjSetter != null)
                 {
@@ -153,7 +162,12 @@ namespace Firebase.Database.Streaming
                 }
                 else
                 {
-                    JsonConvert.PopulateObject(data, obj, this.serializerSettings);
+                    if (this.userSettings != null)
+                    {
+                        this.userSettings.ObjectCreationHandling = ObjectCreationHandling.Replace;
+                    }
+
+                    JsonConvert.PopulateObject(data, obj, this.userSettings ?? this.serializerSettings);
                 }
 
                 // Triggers an upsert if dictionary is an OfflineDatabase.

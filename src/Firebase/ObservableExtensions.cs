@@ -14,13 +14,14 @@
         /// Starts observing on given firebase observable and propagates event into an <see cref="ObservableCollection{T}"/>.
         /// </summary>
         /// <param name="observable"> The observable. </param>
+        /// <param name="subscriber">Receives the subscriber for this observable subscription.</param>
         /// <typeparam name="T"> Type of entity. </typeparam>
         /// <returns> The <see cref="ObservableCollection{T}"/>. </returns> 
-        public static ObservableCollection<T> AsObservableCollection<T>(this IObservable<FirebaseEvent<T>> observable)
+        public static ObservableCollection<T> AsObservableCollection<T>(this IObservable<FirebaseEvent<T>> observable, out IDisposable subscriber)
         {
             var collection = new ObservableCollection<T>();
 
-            observable.Subscribe(f =>
+            subscriber = observable.Subscribe(f =>
             {
                 if (f.EventType == FirebaseEventType.InsertOrUpdate)
                 {
